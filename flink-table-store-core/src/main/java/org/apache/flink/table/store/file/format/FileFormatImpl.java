@@ -45,6 +45,7 @@ public class FileFormatImpl extends FileFormat {
         this.formatOptions = formatOptions;
     }
 
+    @Override
     protected BulkDecodingFormat<RowData> getDecodingFormat() {
         return readerFactory.createDecodingFormat(null, formatOptions); // context is useless
     }

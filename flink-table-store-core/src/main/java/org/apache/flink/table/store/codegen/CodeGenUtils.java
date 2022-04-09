@@ -47,7 +47,8 @@ public class CodeGenUtils {
         Projection<RowData, BinaryRowData> projection =
                 CodeGenLoader.getInstance()
                         .discover(CodeGenerator.class)
-                        .generateProjection(new TableConfig(), "Projection", inputType, mapping)
+                        .generateProjection(
+                                TableConfig.getDefault(), "Projection", inputType, mapping)
                         .newInstance(Thread.currentThread().getContextClassLoader());
         return projection;
     }

@@ -77,7 +77,7 @@ public class FileStoreImpl implements FileStore {
         this.mergeFunction = mergeFunction;
         this.genRecordComparator =
                 CodeGenUtils.generateRecordComparator(
-                        new TableConfig(), keyType.getChildren(), "KeyComparator");
+                        TableConfig.getDefault(), keyType.getChildren(), "KeyComparator");
     }
 
     public FileStorePathFactory pathFactory() {

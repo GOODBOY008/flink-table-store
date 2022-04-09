@@ -64,10 +64,10 @@ public class SortBufferMemTable implements MemTable {
         // for sort binary buffer
         NormalizedKeyComputer normalizedKeyComputer =
                 CodeGenUtils.newNormalizedKeyComputer(
-                        new TableConfig(), sortKeyTypes, "MemTableKeyComputer");
+                        TableConfig.getDefault(), sortKeyTypes, "MemTableKeyComputer");
         RecordComparator keyComparator =
                 CodeGenUtils.newRecordComparator(
-                        new TableConfig(), sortKeyTypes, "MemTableComparator");
+                        TableConfig.getDefault(), sortKeyTypes, "MemTableComparator");
 
         HeapMemorySegmentPool memoryPool =
                 new HeapMemorySegmentPool((int) (maxMemSize / pageSize), (int) pageSize);

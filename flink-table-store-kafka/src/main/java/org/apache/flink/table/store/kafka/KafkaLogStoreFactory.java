@@ -25,6 +25,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.catalog.ResolvedSchema;
+import org.apache.flink.table.connector.Projection;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.factories.DynamicTableFactory;
 import org.apache.flink.table.factories.FactoryUtil;
@@ -190,7 +191,7 @@ public class KafkaLogStoreFactory implements LogStoreTableFactory {
         DeserializationSchema<RowData> primaryKeyDeserializer = null;
         int[] primaryKey = schema.getPrimaryKeyIndexes();
         if (primaryKey.length > 0) {
-            DataType keyType = DataTypeUtils.projectRow(physicalType, primaryKey);
+            DataType keyType = Projection.of(primaryKey).project(physicalType);
             primaryKeyDeserializer =
                     LogStoreTableFactory.getKeyDecodingFormat(helper)
                             .createRuntimeDecoder(sourceContext, keyType);
@@ -220,7 +221,8 @@ public class KafkaLogStoreFactory implements LogStoreTableFactory {
         SerializationSchema<RowData> primaryKeySerializer = null;
         int[] primaryKey = schema.getPrimaryKeyIndexes();
         if (primaryKey.length > 0) {
-            DataType keyType = DataTypeUtils.projectRow(physicalType, primaryKey);
+            DataType keyType = Projection.of(primaryKey).project(physicalType);
+            ;
             primaryKeySerializer =
                     LogStoreTableFactory.getKeyEncodingFormat(helper)
                             .createRuntimeEncoder(sinkContext, keyType);

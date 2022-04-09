@@ -222,14 +222,17 @@ public class StoreSink<WriterStateT, LogCommT>
     private static class NoOutputSerializer<T> implements SimpleVersionedSerializer<T> {
         private NoOutputSerializer() {}
 
+        @Override
         public int getVersion() {
             return 1;
         }
 
+        @Override
         public byte[] serialize(T obj) {
             throw new IllegalStateException("Should not serialize anything");
         }
 
+        @Override
         public T deserialize(int version, byte[] serialized) {
             throw new IllegalStateException("Should not deserialize anything");
         }
