@@ -65,6 +65,7 @@ under the License.
         <module>flink-table-store-shade</module>
         <module>flink-table-store-hive</module>
         <module>flink-table-store-kafka</module>
+        <module>flink-table-store-rocketmq</module>
         <module>flink-table-store-spark</module>
         <module>flink-table-store-spark2</module>
     </modules>
@@ -123,6 +124,8 @@ under the License.
         <flink.parquet>flink-parquet</flink.parquet>
         <flink.connector.kafka>flink-connector-kafka</flink.connector.kafka>
         <flink.sql.connector.kafka>flink-sql-connector-kafka</flink.sql.connector.kafka>
+        <rocketmq.flink>rocketmq-flink</rocketmq.flink>
+        <rocketmq.flink.version>1.0.0-SNAPSHOT</rocketmq.flink.version>
         <flink.test.utils>flink-test-utils</flink.test.utils>
         <flink.sql.parquet>flink-sql-parquet</flink.sql.parquet>
     </properties>
