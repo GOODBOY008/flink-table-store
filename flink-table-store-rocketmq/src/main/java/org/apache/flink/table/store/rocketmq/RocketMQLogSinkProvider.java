@@ -20,29 +20,29 @@ package org.apache.flink.table.store.rocketmq;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.streaming.connectors.rocketmq.FlinkRocketMQProducer.Semantic;
+import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.store.CoreOptions.LogChangelogMode;
 import org.apache.flink.table.store.CoreOptions.LogConsistency;
 import org.apache.flink.table.store.log.LogSinkProvider;
 import org.apache.flink.table.store.table.sink.LogSinkFunction;
 
-import org.apache.rocketmq.clients.producer.ProducerConfig;
-
 import javax.annotation.Nullable;
-
 import java.util.Properties;
 
-/** A rocketmq {@link LogSinkProvider}. */
+/**
+ * A rocketmq {@link LogSinkProvider}.
+ */
 public class RocketMQLogSinkProvider implements LogSinkProvider {
 
     private static final long serialVersionUID = 1L;
 
     private final String topic;
 
-    private final Properties properties;
+    private final Properties rabbitmqProducerConfig;
 
-    @Nullable private final SerializationSchema<RowData> primaryKeySerializer;
+    @Nullable
+    private final SerializationSchema<RowData> primaryKeySerializer;
 
     private final SerializationSchema<RowData> valueSerializer;
 
@@ -52,13 +52,13 @@ public class RocketMQLogSinkProvider implements LogSinkProvider {
 
     public RocketMQLogSinkProvider(
             String topic,
-            Properties properties,
+            Properties rabbitmqProducerConfig,
             @Nullable SerializationSchema<RowData> primaryKeySerializer,
             SerializationSchema<RowData> valueSerializer,
             LogConsistency consistency,
             LogChangelogMode changelogMode) {
         this.topic = topic;
-        this.properties = properties;
+        this.rabbitmqProducerConfig = rabbitmqProducerConfig;
         this.primaryKeySerializer = primaryKeySerializer;
         this.valueSerializer = valueSerializer;
         this.consistency = consistency;
@@ -67,27 +67,30 @@ public class RocketMQLogSinkProvider implements LogSinkProvider {
 
     @Override
     public LogSinkFunction createSink() {
-        Semantic semantic;
+        DeliveryGuarantee deliveryGuarantee;
+        String producerGroup = null;
         switch (consistency) {
             case TRANSACTIONAL:
-                properties.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "log-store-" + topic);
-                semantic = Semantic.EXACTLY_ONCE;
+                producerGroup = "log-store-" + topic;
+                deliveryGuarantee = DeliveryGuarantee.EXACTLY_ONCE;
                 break;
             case EVENTUAL:
                 if (primaryKeySerializer == null) {
                     throw new IllegalArgumentException(
                             "Can not use EVENTUAL consistency mode for non-pk table.");
                 }
-                semantic = Semantic.AT_LEAST_ONCE;
+                deliveryGuarantee = DeliveryGuarantee.AT_LEAST_ONCE;
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported: " + consistency);
         }
-        return new RocketMQSinkFunction(topic, createSerializationSchema(), properties, semantic);
+        return new RocketMQSinkFunction(deliveryGuarantee,
+                rabbitmqProducerConfig,
+                producerGroup,
+                createSerializationSchema());
     }
 
-    @VisibleForTesting
-    RocketMQLogSerializationSchema createSerializationSchema() {
+    @VisibleForTesting RocketMQLogSerializationSchema createSerializationSchema() {
         return new RocketMQLogSerializationSchema(
                 topic, primaryKeySerializer, valueSerializer, changelogMode);
     }

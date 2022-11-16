@@ -35,37 +35,32 @@ import org.apache.flink.table.store.log.LogStoreTableFactory;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.utils.DataTypeUtils;
 import org.apache.flink.util.Preconditions;
-
-import org.apache.rocketmq.clients.admin.AdminClient;
-import org.apache.rocketmq.clients.admin.NewTopic;
-import org.apache.rocketmq.common.config.TopicConfig;
-import org.apache.rocketmq.common.errors.TopicExistsException;
-import org.apache.rocketmq.common.errors.UnknownTopicOrPartitionException;
+import org.apache.rocketmq.client.exception.MQBrokerException;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.remoting.exception.RemotingException;
+import org.apache.rocketmq.remoting.protocol.LanguageCode;
+import org.apache.rocketmq.tools.admin.DefaultMQAdminExt;
 
 import javax.annotation.Nullable;
-
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 
 import static org.apache.flink.table.factories.FactoryUtil.createTableFactoryHelper;
 import static org.apache.flink.table.store.CoreOptions.LOG_CHANGELOG_MODE;
 import static org.apache.flink.table.store.CoreOptions.LOG_CONSISTENCY;
-import static org.apache.flink.table.store.CoreOptions.LOG_RETENTION;
 import static org.apache.flink.table.store.CoreOptions.LOG_SCAN;
 import static org.apache.flink.table.store.CoreOptions.LOG_SCAN_TIMESTAMP_MILLS;
-import static org.apache.flink.table.store.CoreOptions.LogConsistency;
-import static org.apache.flink.table.store.rocketmq.RocketMQLogOptions.BOOTSTRAP_SERVERS;
+import static org.apache.flink.table.store.rocketmq.RocketMQLogOptions.NAME_SERVER_ADDR;
 import static org.apache.flink.table.store.rocketmq.RocketMQLogOptions.TOPIC;
-import static org.apache.rocketmq.clients.consumer.ConsumerConfig.ISOLATION_LEVEL_CONFIG;
 
-/** The rocketmq {@link LogStoreTableFactory} implementation. */
+/**
+ * The rocketmq {@link LogStoreTableFactory} implementation.
+ */
 public class RocketMQLogStoreFactory implements LogStoreTableFactory {
 
     public static final String IDENTIFIER = "rocketmq";
@@ -80,7 +75,7 @@ public class RocketMQLogStoreFactory implements LogStoreTableFactory {
     @Override
     public Set<ConfigOption<?>> requiredOptions() {
         Set<ConfigOption<?>> options = new HashSet<>();
-        options.add(BOOTSTRAP_SERVERS);
+        options.add(NAME_SERVER_ADDR);
         return options;
     }
 
@@ -109,64 +104,74 @@ public class RocketMQLogStoreFactory implements LogStoreTableFactory {
     @Override
     public void onCreateTable(Context context, int numBucket, boolean ignoreIfExists) {
         Configuration options = Configuration.fromMap(context.getCatalogTable().getOptions());
-        try (AdminClient adminClient = AdminClient.create(toRocketMQProperties(options))) {
-            Map<String, String> configs = new HashMap<>();
-            options.getOptional(LOG_RETENTION)
-                    .ifPresent(
-                            retention ->
-                                    configs.put(
-                                            TopicConfig.RETENTION_MS_CONFIG,
-                                            String.valueOf(retention.toMillis())));
-            NewTopic topicObj =
-                    new NewTopic(topic(context), Optional.of(numBucket), Optional.empty())
-                            .configs(configs);
-            adminClient.createTopics(Collections.singleton(topicObj)).all().get();
-        } catch (ExecutionException | InterruptedException e) {
-            if (e.getCause() instanceof TopicExistsException) {
-                if (ignoreIfExists) {
-                    return;
-                }
-                throw new TableException(
-                        String.format(
-                                "Failed to create rocketmq topic. "
-                                        + "Reason: topic %s exists for table %s. "
-                                        + "Suggestion: please try `DESCRIBE TABLE %s` to "
-                                        + "check whether table exists in current catalog. "
-                                        + "If table exists and the DDL needs to be executed "
-                                        + "multiple times, please use `CREATE TABLE IF NOT EXISTS` ddl instead. "
-                                        + "Otherwise, please choose another table name "
-                                        + "or manually delete the current topic and try again.",
-                                topic(context),
-                                context.getObjectIdentifier().asSerializableString(),
-                                context.getObjectIdentifier().asSerializableString()));
+        DefaultMQAdminExt mqAdminExt = null;
+        String namesrvAddr = options.get(NAME_SERVER_ADDR);
+        try {
+//            Map<String, String> configs = new HashMap<>();
+//            options.getOptional(LOG_RETENTION)
+//                    .ifPresent(
+//                            retention ->
+//                                    configs.put(
+//                                            TopicConfig.RETENTION_MS_CONFIG,
+//                                            String.valueOf(retention.toMillis())));
+            mqAdminExt = new DefaultMQAdminExt();
+            mqAdminExt.setNamesrvAddr(namesrvAddr);
+            mqAdminExt.setLanguage(LanguageCode.JAVA);
+            mqAdminExt.start();
+
+            mqAdminExt.createTopic("key", topic(context), numBucket, 1);
+
+
+        } catch (MQClientException e) {
+            if (ignoreIfExists) {
+                return;
             }
-            throw new TableException("Error in createTopic", e);
+            throw new TableException(
+                    String.format(
+                            "Failed to create rocketmq topic. "
+                                    + "Reason: topic %s exists for table %s. "
+                                    + "Suggestion: please try `DESCRIBE TABLE %s` to "
+                                    + "check whether table exists in current catalog. "
+                                    + "If table exists and the DDL needs to be executed "
+                                    + "multiple times, please use `CREATE TABLE IF NOT EXISTS` ddl instead. "
+                                    + "Otherwise, please choose another table name "
+                                    + "or manually delete the current topic and try again.",
+                            topic(context),
+                            context.getObjectIdentifier().asSerializableString(),
+                            context.getObjectIdentifier().asSerializableString()));
+        } finally {
+            if (mqAdminExt != null) {
+                mqAdminExt.shutdown();
+            }
         }
     }
 
     @Override
     public void onDropTable(Context context, boolean ignoreIfNotExists) {
-        try (AdminClient adminClient =
-                AdminClient.create(
-                        toRocketMQProperties(createTableFactoryHelper(this, context).getOptions()))) {
-            adminClient.deleteTopics(Collections.singleton(topic(context))).all().get();
-        } catch (ExecutionException e) {
-            // check the cause to ignore topic not exists conditionally
-            if (e.getCause() instanceof UnknownTopicOrPartitionException) {
-                if (ignoreIfNotExists) {
-                    return;
-                }
-                throw new TableException(
-                        String.format(
-                                "Failed to delete rocketmq topic. "
-                                        + "Reason: topic %s doesn't exist for table %s. "
-                                        + "Suggestion: please try `DROP TABLE IF EXISTS` ddl instead.",
-                                topic(context),
-                                context.getObjectIdentifier().asSerializableString()));
+
+        Configuration options = Configuration.fromMap(context.getCatalogTable().getOptions());
+        DefaultMQAdminExt mqAdminExt = null;
+        String namesrvAddr = options.get(NAME_SERVER_ADDR);
+
+        try  {
+            mqAdminExt = new DefaultMQAdminExt();
+            mqAdminExt.setNamesrvAddr(namesrvAddr);
+            mqAdminExt.setLanguage(LanguageCode.JAVA);
+            mqAdminExt.start();
+
+            mqAdminExt.deleteTopicInNameServer(Collections.singleton(namesrvAddr), topic(context));
+
+        } catch (InterruptedException | MQBrokerException | RemotingException | MQClientException e) {
+            if (ignoreIfNotExists) {
+                return;
             }
-            throw new TableException("Error in deleteTopic", e);
-        } catch (InterruptedException e) {
-            throw new TableException("Error in deleteTopic", e);
+            throw new TableException(
+                    String.format(
+                            "Failed to delete rocketmq topic. "
+                                    + "Reason: topic %s doesn't exist for table %s. "
+                                    + "Suggestion: please try `DROP TABLE IF EXISTS` ddl instead.",
+                            topic(context),
+                            context.getObjectIdentifier().asSerializableString()));
         }
     }
 
@@ -177,6 +182,10 @@ public class RocketMQLogStoreFactory implements LogStoreTableFactory {
             @Nullable int[][] projectFields) {
         FactoryUtil.TableFactoryHelper helper = createTableFactoryHelper(this, context);
         ResolvedSchema schema = context.getCatalogTable().getResolvedSchema();
+
+        Map<String, String> rawProperties = context.getCatalogTable().getOptions();
+        Configuration configuration = Configuration.fromMap(rawProperties);
+
         DataType physicalType = schema.toPhysicalRowDataType();
         DeserializationSchema<RowData> primaryKeyDeserializer = null;
         int[] primaryKey = getPrimaryKeyIndexes(schema);
@@ -190,13 +199,13 @@ public class RocketMQLogStoreFactory implements LogStoreTableFactory {
                 LogStoreTableFactory.getValueDecodingFormat(helper)
                         .createRuntimeDecoder(sourceContext, physicalType);
         return new RocketMQLogSourceProvider(
-                topic(context),
                 toRocketMQProperties(helper.getOptions()),
                 physicalType,
                 primaryKey,
                 primaryKeyDeserializer,
                 valueDeserializer,
                 projectFields,
+                configuration,
                 helper.getOptions().get(LOG_CONSISTENCY),
                 helper.getOptions().get(LOG_SCAN),
                 helper.getOptions().get(LOG_SCAN_TIMESTAMP_MILLS));
@@ -233,7 +242,7 @@ public class RocketMQLogStoreFactory implements LogStoreTableFactory {
         return schema.getPrimaryKey()
                 .map(UniqueConstraint::getColumns)
                 .map(pkColumns -> pkColumns.stream().mapToInt(columns::indexOf).toArray())
-                .orElseGet(() -> new int[] {});
+                .orElseGet(() -> new int[]{});
     }
 
     public static Properties toRocketMQProperties(ReadableConfig options) {
@@ -246,11 +255,6 @@ public class RocketMQLogStoreFactory implements LogStoreTableFactory {
                                 properties.put(
                                         key.substring((KAFKA_PREFIX).length()),
                                         optionMap.get(key)));
-
-        // Add read committed for transactional consistency mode.
-        if (options.get(LOG_CONSISTENCY) == LogConsistency.TRANSACTIONAL) {
-            properties.setProperty(ISOLATION_LEVEL_CONFIG, "read_committed");
-        }
         return properties;
     }
 }

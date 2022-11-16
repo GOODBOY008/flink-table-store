@@ -24,8 +24,8 @@ import org.apache.flink.configuration.ConfigOptions;
 /** Options for rocketmq log. */
 public class RocketMQLogOptions {
 
-    public static final ConfigOption<String> BOOTSTRAP_SERVERS =
-            ConfigOptions.key("rocketmq.bootstrap.servers")
+    public static final ConfigOption<String> NAME_SERVER_ADDR =
+            ConfigOptions.key("rocketmq.nameserver.address")
                     .stringType()
                     .noDefaultValue()
                     .withDescription("Required rocketmq server connection string");

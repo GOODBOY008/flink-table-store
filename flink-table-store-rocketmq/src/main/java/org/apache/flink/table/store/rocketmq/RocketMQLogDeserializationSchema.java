@@ -21,23 +21,17 @@ package org.apache.flink.table.store.rocketmq;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.DeserializationSchema.InitializationContext;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.streaming.connectors.rocketmq.RocketMQDeserializationSchema;
-import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.store.utils.ProjectedRowData;
 import org.apache.flink.table.store.utils.Projection;
 import org.apache.flink.table.store.utils.RowDataUtils;
 import org.apache.flink.table.types.DataType;
-import org.apache.flink.types.RowKind;
 import org.apache.flink.util.Collector;
-
-import org.apache.rocketmq.clients.consumer.ConsumerRecord;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.flink.source.reader.deserializer.RocketMQDeserializationSchema;
 
 import javax.annotation.Nullable;
-
 import java.io.IOException;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -45,9 +39,54 @@ import java.util.stream.IntStream;
 /** A {@link RocketMQDeserializationSchema} for the table with primary key in log store. */
 public class RocketMQLogDeserializationSchema implements RocketMQDeserializationSchema<RowData> {
 
+    private final TypeInformation<RowData> producedType;
+    private final int fieldCount;
+    private final int[] primaryKey;
+    @Nullable
+    private final DeserializationSchema<RowData> primaryKeyDeserializer;
+    private final DeserializationSchema<RowData> valueDeserializer;
+    private final RowData.FieldGetter[] keyFieldGetters;
+    @Nullable
+    private final int[][] projectFields;
+
+    private transient ProjectCollector projectCollector;
+
+    public RocketMQLogDeserializationSchema(
+            DataType physicalType,
+            int[] primaryKey,
+            @Nullable DeserializationSchema<RowData> primaryKeyDeserializer,
+            DeserializationSchema<RowData> valueDeserializer,
+            @Nullable int[][] projectFields) {
+        this.primaryKey = primaryKey;
+        this.primaryKeyDeserializer = primaryKeyDeserializer;
+        this.valueDeserializer = valueDeserializer;
+        DataType projectedType =
+                projectFields == null
+                        ? physicalType
+                        : Projection.of(projectFields).project(physicalType);
+        this.producedType = InternalTypeInfo.of(projectedType.getLogicalType());
+        this.fieldCount = physicalType.getChildren().size();
+        this.projectFields = projectFields;
+        this.keyFieldGetters =
+                IntStream.range(0, primaryKey.length)
+                        .mapToObj(
+                                i ->
+                                        RowDataUtils.createNullCheckingFieldGetter(
+                                                physicalType
+                                                        .getChildren()
+                                                        .get(primaryKey[i])
+                                                        .getLogicalType(),
+                                                i))
+                        .toArray(RowData.FieldGetter[]::new);
+    }
+
     @Override
     public void open(InitializationContext context) {
-        RocketMQDeserializationSchema.super.open(context);
+//        if (primaryKeyDeserializer != null) {
+//            primaryKeyDeserializer.open(context);
+//        }
+//        valueDeserializer.open(context);
+//        projectCollector = new ProjectCollector();
     }
 
     @Override
@@ -58,5 +97,30 @@ public class RocketMQLogDeserializationSchema implements RocketMQDeserialization
     @Override
     public TypeInformation<RowData> getProducedType() {
         return null;
+    }
+
+    private class ProjectCollector implements Collector<RowData> {
+
+        private final ProjectedRowData projectedRow =
+                projectFields == null ? null : ProjectedRowData.from(projectFields);
+
+        private Collector<RowData> underCollector;
+
+        private Collector<RowData> project(Collector<RowData> underCollector) {
+            if (projectedRow == null) {
+                return underCollector;
+            }
+
+            this.underCollector = underCollector;
+            return this;
+        }
+
+        @Override
+        public void collect(RowData rowData) {
+            underCollector.collect(projectedRow.replaceRow(rowData));
+        }
+
+        @Override
+        public void close() {}
     }
 }

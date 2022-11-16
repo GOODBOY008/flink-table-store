@@ -19,24 +19,26 @@
 package org.apache.flink.table.store.rocketmq;
 
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.connector.rocketmq.sink.RocketMQRecordSerializationSchema;
-import org.apache.flink.streaming.connectors.rocketmq.RocketMQSerializationSchema;
+import org.apache.flink.api.common.serialization.SerializationSchema.InitializationContext;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.store.CoreOptions.LogChangelogMode;
 import org.apache.flink.table.store.table.sink.SinkRecord;
 import org.apache.flink.types.RowKind;
-
-import org.apache.rocketmq.clients.producer.ProducerRecord;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.flink.sink2.writer.serializer.RocketMQSerializationSchema;
 
 import javax.annotation.Nullable;
 
-/** A {@link RocketMQRecordSerializationSchema} for the table in log store. */
+/**
+ * A {@link RocketMQSerializationSchema} for the table in log store.
+ */
 public class RocketMQLogSerializationSchema implements RocketMQSerializationSchema<SinkRecord> {
 
     private static final long serialVersionUID = 1L;
 
     private final String topic;
-    @Nullable private final SerializationSchema<RowData> primaryKeySerializer;
+    @Nullable
+    private final SerializationSchema<RowData> primaryKeySerializer;
     private final SerializationSchema<RowData> valueSerializer;
     private final LogChangelogMode changelogMode;
 
@@ -56,15 +58,17 @@ public class RocketMQLogSerializationSchema implements RocketMQSerializationSche
     }
 
     @Override
-    public void open(SerializationSchema.InitializationContext context) throws Exception {
+    public void open(InitializationContext context, RocketMQSinkContext sinkContext) throws Exception {
+
         if (primaryKeySerializer != null) {
             primaryKeySerializer.open(context);
         }
         valueSerializer.open(context);
+        RocketMQSerializationSchema.super.open(context, sinkContext);
     }
 
     @Override
-    public ProducerRecord<byte[], byte[]> serialize(SinkRecord element, @Nullable Long timestamp) {
+    public Message serialize(SinkRecord element, RocketMQSinkContext context, Long timestamp) {
         RowKind kind = element.row().getRowKind();
 
         byte[] primaryKeyBytes = null;
@@ -79,6 +83,6 @@ public class RocketMQLogSerializationSchema implements RocketMQSerializationSche
         } else {
             valueBytes = valueSerializer.serialize(element.row());
         }
-        return new ProducerRecord<>(topic, element.bucket(), primaryKeyBytes, valueBytes);
+        return new Message(topic, null, null, valueBytes);
     }
 }
