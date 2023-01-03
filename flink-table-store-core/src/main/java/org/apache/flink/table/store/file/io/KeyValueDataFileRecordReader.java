@@ -40,6 +40,7 @@ public class KeyValueDataFileRecordReader implements RecordReader<KeyValue> {
     private final KeyValueSerializer serializer;
     private final int level;
     @Nullable private final int[] indexMapping;
+    private final Path path;
 
     public KeyValueDataFileRecordReader(
             BulkFormat<RowData, FileSourceSplit> readerFactory,
@@ -49,6 +50,7 @@ public class KeyValueDataFileRecordReader implements RecordReader<KeyValue> {
             int level,
             @Nullable int[] indexMapping)
             throws IOException {
+        this.path = path;
         this.reader = FileUtils.createFormatReader(readerFactory, path);
         this.serializer = new KeyValueSerializer(keyType, valueType);
         this.level = level;
@@ -58,6 +60,7 @@ public class KeyValueDataFileRecordReader implements RecordReader<KeyValue> {
     @Nullable
     @Override
     public RecordIterator<KeyValue> readBatch() throws IOException {
+        System.out.println(Thread.currentThread().getId()+"path: " + path);
         BulkFormat.RecordIterator<RowData> iterator = reader.readBatch();
         return iterator == null ? null : new KeyValueDataFileRecordIterator(iterator, indexMapping);
     }

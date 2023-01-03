@@ -41,7 +41,7 @@ import java.util.TreeSet;
  *
  * <p>NOTE: {@link KeyValue}s from the same {@link RecordReader} must not contain the same key.
  */
-public class SortMergeReader<T> implements RecordReader<T> {
+public class SortMergeReaderbak<T> implements RecordReader<T> {
 
     private final Comparator<RowData> userKeyComparator;
     private final MergeFunctionWrapper<T> mergeFunctionWrapper;
@@ -54,18 +54,17 @@ public class SortMergeReader<T> implements RecordReader<T> {
     private int remainReaderCount;
     private final int[] nodes;
 
-    private boolean readNextBatch;
-
-    public SortMergeReader(
+    public SortMergeReaderbak(
             List<RecordReader<KeyValue>> readers,
             Comparator<RowData> userKeyComparator,
             MergeFunctionWrapper<T> mergeFunctionWrapper) {
+        System.out.println(Thread.currentThread().getId()+ "SortMergeReader --------------------");
+
         this.nextBatchReaders = new ArrayList<>(readers);
         this.userKeyComparator = userKeyComparator;
         this.mergeFunctionWrapper = mergeFunctionWrapper;
 
         this.size = readers.size();
-        this.readNextBatch = false;
         this.nextIterators = new RecordIterator[size];
         this.nodeIndexes = new ArrayList<>(size);
         this.sameKeyMap = new HashMap<>(size);
@@ -78,9 +77,9 @@ public class SortMergeReader<T> implements RecordReader<T> {
     @Override
     public RecordIterator<T> readBatch() throws IOException {
 
-        if (remainReaderCount > 0 && !readNextBatch) {
-            readNextBatch = true;
+        System.out.println(Thread.currentThread().getId()+ "readBatch --------------------");
 
+        if (remainReaderCount > 0) {
             int winner = 0;
             for (int i = 0; i < size; i++) {
                 leaves[i] = getIterator(i);
@@ -180,13 +179,20 @@ public class SortMergeReader<T> implements RecordReader<T> {
 
     @Override
     public void close() throws IOException {
+
+        System.out.println(Thread.currentThread().getId()+"SortMergeReader close --------------------");
+        for (RecordIterator<KeyValue> nextIterator : nextIterators) {
+            if (nextIterator != null) {
+                nextIterator.releaseBatch();
+            }
+        }
         for (RecordReader<KeyValue> reader : nextBatchReaders) {
             reader.close();
         }
     }
 
     /**
-     * The iterator iterates on {@link SortMergeReader}.
+     * The iterator iterates on {@link SortMergeReaderbak}.
      */
     private class SortMergeIterator implements RecordIterator<T> {
 
